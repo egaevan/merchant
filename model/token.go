@@ -6,5 +6,6 @@ type Token struct {
 	UserID int
 	Name   string
 	Email  string
+	Role   int
 	*jwt.StandardClaims
 }

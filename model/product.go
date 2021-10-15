@@ -12,3 +12,9 @@ type ProductUpdate struct {
 	Sku  string `json:"sku"`
 	Path string `json:"path"`
 }
+
+type ProductDetail struct {
+	Product Product `json:"product"`
+	Price   int     `json:"price"`
+	Stock   int     `json:"stock"`
+}

@@ -1,31 +1,32 @@
 package rest
 
 import (
-	"context"
-	"encoding/json"
 	"net/http"
 	"strings"
 
 	jwt "github.com/dgrijalva/jwt-go"
 	"github.com/egaevan/merchant/model"
+	"github.com/labstack/echo/v4"
 )
 
-//Exception struct
-type Exception model.Exception
+type Exception struct {
+	Message string `json:"message"`
+}
 
-// JwtVerify Middleware function
-func JwtVerify(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func JwtVerify(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
 
-		var header = r.Header.Get("x-access-token") //Grab the token from the header
+		var header = c.Request().Header.Get("x-access-token") // Grab the token from the header
 
 		header = strings.TrimSpace(header)
 
 		if header == "" {
-			w.WriteHeader(http.StatusForbidden)
-			json.NewEncoder(w).Encode(Exception{Message: "Missing auth token"})
-			return
+			// Token is missing, returns with error code 403 Unauthorized
+			return c.JSON(http.StatusForbidden, Exception{
+				Message: "Missing auth token"},
+			)
 		}
+
 		tk := &model.Token{}
 
 		_, err := jwt.ParseWithClaims(header, tk, func(token *jwt.Token) (interface{}, error) {
@@ -33,12 +34,13 @@ func JwtVerify(next http.Handler) http.Handler {
 		})
 
 		if err != nil {
-			w.WriteHeader(http.StatusForbidden)
-			json.NewEncoder(w).Encode(Exception{Message: err.Error()})
-			return
+			return c.JSON(http.StatusForbidden, Exception{
+				Message: err.Error()},
+			)
 		}
 
-		ctx := context.WithValue(r.Context(), "user", tk)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
+		c.Set("user", tk)
+
+		return next(c)
+	}
 }

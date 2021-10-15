@@ -2,24 +2,22 @@ package repository
 
 import (
 	"context"
-	"net/http"
 
 	"github.com/egaevan/merchant/model"
 )
 
 type UserRepository interface {
-	Login(context.Context, http.ResponseWriter, *http.Request)
-	FindOne(context.Context, string, string) map[string]interface{}
-	// Fetch(context.Context)
-	// Store(context.Context)
-	// Delete(context.Context)
-	// Aa
+	FindOne(context.Context, string, string) (model.User, error)
+	Fetch(context.Context) error
+	Store(context.Context, model.User) error
+	Update(context.Context, int, model.User) error
+	Delete(context.Context, int) error
 }
 
 type ProductRepository interface {
-	FindOne(context.Context, int) (*model.Product, error)
-	Fetch(context.Context) ([]model.Product, error)
-	Store(context.Context, model.Product) error
-	Update(context.Context, model.ProductUpdate, int) error
+	FindOne(context.Context, int) (*model.ProductDetail, error)
+	Fetch(context.Context) ([]model.ProductDetail, error)
+	Store(context.Context, model.ProductDetail) error
+	Update(context.Context, model.ProductDetail, int) error
 	Delete(context.Context, int) error
 }

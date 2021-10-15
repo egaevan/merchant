@@ -36,12 +36,14 @@ func main() {
 
 	// Init repository
 	productRepo := repository.NewProductRepository(db)
+	userRepo := repository.NewUserRepository(db)
 
 	// Init usecase
 	productUsecae := usecase.NewProduct(productRepo)
+	userUsecae := usecase.NewUser(userRepo)
 
 	// Init handler
-	rest.NewHandler(e, productUsecae)
+	rest.NewHandler(e, productUsecae, userUsecae)
 
 	e.Logger.Fatal(e.Start(":8080"))
 }

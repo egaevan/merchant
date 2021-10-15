@@ -3,9 +3,8 @@ package repository
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
+	"errors"
 	"fmt"
-	"net/http"
 	"time"
 
 	jwt "github.com/dgrijalva/jwt-go"
@@ -21,58 +20,50 @@ type ErrorResponse struct {
 	Err string
 }
 
-func NewUserRepository() UserRepository {
-	return &User{}
-}
-
-func (u *User) Login(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-	user := &model.User{}
-	err := json.NewDecoder(r.Body).Decode(user)
-	if err != nil {
-		var resp = map[string]interface{}{"status": false, "message": "Invalid request"}
-		json.NewEncoder(w).Encode(resp)
-		return
+func NewUserRepository(db *sql.DB) UserRepository {
+	return &User{
+		DB: db,
 	}
-	resp := u.FindOne(ctx, user.Email, user.Password)
-	json.NewEncoder(w).Encode(resp)
 }
 
-func (u *User) FindOne(ctx context.Context, email, password string) map[string]interface{} {
-	user := &model.User{}
-
+func (u *User) FindOne(ctx context.Context, email, password string) (model.User, error) {
 	query := `
 			SELECT 
-				ID,
+				id,
 				name,
 				email,
-				gender
+				password,
+			    role
 			FROM 
 				user
 			WHERE
-				email = ? AND flag_aktif = 1`
+				email = ?`
 
-	err := u.DB.QueryRowContext(ctx, query, email).Scan(&user.ID, &user.Name, &user.Email, &user.Gender)
-	if err != nil {
-		fmt.Println(err)
-	}
+	user := model.User{}
+	err := u.DB.QueryRowContext(ctx, query, email).Scan(
+		&user.Id, &user.Name, &user.Email,
+		&user.Password, &user.Role,
+	)
 
 	if err != nil {
-		var resp = map[string]interface{}{"status": false, "message": "Email address not found"}
-		return resp
+		if err == sql.ErrNoRows {
+			return user, fmt.Errorf("data not found %s", err.Error())
+		}
+		return user, err
 	}
 
 	expiresAt := time.Now().Add(time.Minute * 100000).Unix()
 
 	errf := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password))
 	if errf != nil && errf == bcrypt.ErrMismatchedHashAndPassword { //Password does not match!
-		var resp = map[string]interface{}{"status": false, "message": "Invalid login credentials. Please try again"}
-		return resp
+		return user, errors.New("invalid password")
 	}
 
 	tk := &model.Token{
-		UserID: user.ID,
+		UserID: user.Id,
 		Name:   user.Name,
 		Email:  user.Email,
+		Role:   user.Role,
 		StandardClaims: &jwt.StandardClaims{
 			ExpiresAt: expiresAt,
 		},
@@ -82,77 +73,79 @@ func (u *User) FindOne(ctx context.Context, email, password string) map[string]i
 
 	tokenString, error := token.SignedString([]byte("secret"))
 	if error != nil {
-		fmt.Println(error)
+		return user, err
 	}
 
-	var resp = map[string]interface{}{"status": false, "message": "logged in"}
-	resp["token"] = tokenString //Store the token in the response
-	resp["user"] = user
-	return resp
+	user.Token = tokenString
+
+	return user, err
+}
+func (u *User) Fetch(context.Context) error {
+	return nil
 }
 
-// func FetchUsers(w http.ResponseWriter, r *http.Request) {
-// 	var users []model.User
-// 	db.Preload("auths").Find(&users)
+func (u *User) Store(ctx context.Context, user model.User) error {
+	pass, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
 
-// 	json.NewEncoder(w).Encode(users)
-// }
+	user.Password = string(pass)
 
-// func CreateUser(w http.ResponseWriter, r *http.Request) {
+	query := `
+				INSERT INTO user 
+					(id, name, email, password, gender, role)
+				VALUES
+					(?, ?, ?, ?, ?, ?)
+			`
 
-// 	user := &model.User{}
-// 	json.NewDecoder(r.Body).Decode(user)
+	_, err = u.DB.ExecContext(ctx, query,
+		user.Id, user.Name, user.Email, user.Password, user.Gender, user.Role)
 
-// 	pass, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
-// 	if err != nil {
-// 		fmt.Println(err)
-// 		err := ErrorResponse{
-// 			Err: "Password Encryption  failed",
-// 		}
-// 		json.NewEncoder(w).Encode(err)
-// 	}
+	if err != nil {
+		return err
+	}
 
-// 	user.Password = string(pass)
+	return nil
+}
 
-// 	createdUser := db.Create(user)
-// 	var errMessage = createdUser.Error
+func (u *User) Update(ctx context.Context, userID int, user model.User) error {
+	query := `
+				UPDATE 
+					user
+				SET
+					name = ?,
+					email = ?,
+					password = ?,
+					gender = ?
+				WHERE
+					id = ?
+			`
 
-// 	if createdUser.Error != nil {
-// 		fmt.Println(errMessage)
-// 	}
-// 	json.NewEncoder(w).Encode(createdUser)
-// }
+	_, err := u.DB.ExecContext(ctx, query, user.Name, user.Email, user.Password, user.Gender, userID)
 
-// func FetchUsers(w http.ResponseWriter, r *http.Request) {
-// 	var users []model.User
-// 	db.Preload("auths").Find(&users)
+	if err != nil {
+		return err
+	}
 
-// 	json.NewEncoder(w).Encode(users)
-// }
+	return nil
+}
 
-// func UpdateUser(w http.ResponseWriter, r *http.Request) {
-// 	user := &model.User{}
-// 	params := mux.Vars(r)
-// 	var id = params["id"]
-// 	db.First(&user, id)
-// 	json.NewDecoder(r.Body).Decode(user)
-// 	db.Save(&user)
-// 	json.NewEncoder(w).Encode(&user)
-// }
+func (u *User) Delete(ctx context.Context, userID int) error {
+	query := `
+				UPDATE 
+					user
+				SET
+					flag_aktif = 0
+				WHERE
+					id = ?
+			`
 
-// func DeleteUser(w http.ResponseWriter, r *http.Request) {
-// 	params := mux.Vars(r)
-// 	var id = params["id"]
-// 	var user model.User
-// 	db.First(&user, id)
-// 	db.Delete(&user)
-// 	json.NewEncoder(w).Encode("User deleted")
-// }
+	_, err := u.DB.ExecContext(ctx, query, userID)
 
-// func GetUser(w http.ResponseWriter, r *http.Request) {
-// 	params := mux.Vars(r)
-// 	var id = params["id"]
-// 	var user model.User
-// 	db.First(&user, id)
-// 	json.NewEncoder(w).Encode(&user)
-// }
+	if err != nil {
+		return err
+	}
+
+	return nil
+}

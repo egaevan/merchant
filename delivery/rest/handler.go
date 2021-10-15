@@ -11,18 +11,34 @@ import (
 
 type Handler struct {
 	ProductUsecae usecase.ProductUsecae
+	UserUsecae    usecase.UserUsecae
 }
 
-func NewHandler(e *echo.Echo, productUsecae usecase.ProductUsecae) {
+type responseError struct {
+	Message string `json:"message"`
+}
+
+const (
+	isAdmin int = 1
+)
+
+func NewHandler(e *echo.Echo, productUsecae usecase.ProductUsecae, userUsecae usecase.UserUsecae) {
 	handler := &Handler{
 		ProductUsecae: productUsecae,
+		UserUsecae:    userUsecae,
 	}
 
+	// Routing Product
 	e.GET("/product", handler.GetProduct)
 	e.GET("/product/:productID", handler.GetOneProduct)
-	e.POST("/product", handler.SendProduct)
-	e.PATCH("/product/:productID", handler.UpdateProduct)
-	e.DELETE("/product/:productID", handler.DeleteProduct)
+	e.POST("/product", handler.SendProduct, JwtVerify)
+	e.PATCH("/product/:productID", handler.UpdateProduct, JwtVerify)
+	e.DELETE("/product/:productID", handler.DeleteProduct, JwtVerify)
+
+	// Routing User
+	e.POST("/login", handler.Login)
+	e.POST("/register", handler.Register)
+	e.DELETE("/user/:userID", handler.DeleteUser, JwtVerify)
 }
 
 func (h *Handler) GetOneProduct(c echo.Context) error {
@@ -75,7 +91,7 @@ func (h *Handler) GetProduct(c echo.Context) error {
 
 func (h *Handler) SendProduct(c echo.Context) error {
 	ctx := c.Request().Context()
-	dataReq := model.Product{}
+	dataReq := model.ProductDetail{}
 
 	if err := c.Bind(&dataReq); err != nil {
 		c.JSON(http.StatusBadRequest, responseError{
@@ -98,7 +114,7 @@ func (h *Handler) SendProduct(c echo.Context) error {
 
 func (h *Handler) UpdateProduct(c echo.Context) error {
 	ctx := c.Request().Context()
-	dataReq := model.ProductUpdate{}
+	dataReq := model.ProductDetail{}
 	productIDParam := c.Param("productID")
 
 	if productIDParam == "" {
@@ -172,6 +188,88 @@ func (h *Handler) DeleteProduct(c echo.Context) error {
 	})
 }
 
-type responseError struct {
-	Message string `json:"message"`
+func (h *Handler) Login(c echo.Context) error {
+	dataReq := model.User{}
+	if err := c.Bind(&dataReq); err != nil {
+		c.JSON(http.StatusBadRequest, responseError{
+			Message: "invalid data request",
+		})
+		return echo.ErrBadRequest
+	}
+
+	user, err := h.UserUsecae.Login(c.Request().Context(), dataReq)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, responseError{
+			Message: err.Error(),
+		})
+		return echo.ErrInternalServerError
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"message": "logged in",
+		"token":   user.Token,
+	})
+}
+
+func (h *Handler) Register(c echo.Context) error {
+	dataReq := model.User{}
+	if err := c.Bind(&dataReq); err != nil {
+		c.JSON(http.StatusBadRequest, responseError{
+			Message: "invalid data request",
+		})
+
+		return echo.ErrBadRequest
+	}
+
+	err := h.UserUsecae.CreateUser(c.Request().Context(), dataReq)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, responseError{
+			Message: err.Error(),
+		})
+		return echo.ErrInternalServerError
+	}
+
+	return c.JSON(http.StatusCreated, "success")
+}
+
+func (h *Handler) DeleteUser(c echo.Context) error {
+	userIDParam := c.Param("userID")
+
+	userInfo := c.Get("user").(*model.Token)
+
+	if userInfo.Role != isAdmin {
+		// unauthorized
+		return echo.ErrUnauthorized
+	}
+
+	// admin
+	if userIDParam == "" {
+		c.JSON(http.StatusBadRequest, responseError{
+			Message: "invalid parameter",
+		})
+
+		return echo.ErrBadRequest
+	}
+
+	userID, err := strconv.Atoi(userIDParam)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, responseError{
+			Message: "invalid parameter",
+		})
+
+		return echo.ErrBadRequest
+	}
+
+	err = h.UserUsecae.DeleteUser(c.Request().Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, responseError{
+			Message: "internal error",
+		})
+
+		return echo.ErrInternalServerError
+	}
+
+	return c.JSON(http.StatusOK, responseError{
+		Message: "User has been deleted",
+	})
 }

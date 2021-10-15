@@ -18,7 +18,7 @@ func NewProduct(productRepo repository.ProductRepository) ProductUsecae {
 	}
 }
 
-func (p *Product) GetOneProduct(ctx context.Context, productID int) (*model.Product, error) {
+func (p *Product) GetOneProduct(ctx context.Context, productID int) (*model.ProductDetail, error) {
 
 	prod, err := p.ProductRepo.FindOne(ctx, productID)
 	if err != nil {
@@ -29,7 +29,7 @@ func (p *Product) GetOneProduct(ctx context.Context, productID int) (*model.Prod
 	return prod, nil
 }
 
-func (p *Product) GetProduct(ctx context.Context) ([]model.Product, error) {
+func (p *Product) GetProduct(ctx context.Context) ([]model.ProductDetail, error) {
 
 	prod, err := p.ProductRepo.Fetch(ctx)
 	if err != nil {
@@ -37,15 +37,17 @@ func (p *Product) GetProduct(ctx context.Context) ([]model.Product, error) {
 		return nil, err
 	}
 
-	productList := []model.Product{}
+	productList := []model.ProductDetail{}
 
 	for _, v := range prod {
-		var product model.Product
+		var product model.ProductDetail
 
-		product.ID = v.ID
-		product.Name = v.Name
-		product.Sku = v.Sku
-		product.Path = v.Path
+		product.Product.ID = v.Product.ID
+		product.Product.Name = v.Product.Name
+		product.Product.Sku = v.Product.Sku
+		product.Product.Path = v.Product.Path
+		product.Price = v.Price
+		product.Stock = v.Stock
 
 		productList = append(productList, product)
 	}
@@ -53,7 +55,7 @@ func (p *Product) GetProduct(ctx context.Context) ([]model.Product, error) {
 	return productList, nil
 }
 
-func (p *Product) SendProduct(ctx context.Context, product model.Product) (*model.Product, error) {
+func (p *Product) SendProduct(ctx context.Context, product model.ProductDetail) (*model.ProductDetail, error) {
 
 	err := p.ProductRepo.Store(ctx, product)
 	if err != nil {
@@ -64,7 +66,7 @@ func (p *Product) SendProduct(ctx context.Context, product model.Product) (*mode
 	return &product, nil
 }
 
-func (p *Product) UpdateProduct(ctx context.Context, product model.ProductUpdate, productID int) (*model.ProductUpdate, error) {
+func (p *Product) UpdateProduct(ctx context.Context, product model.ProductDetail, productID int) (*model.ProductDetail, error) {
 
 	err := p.ProductRepo.Update(ctx, product, productID)
 	if err != nil {
